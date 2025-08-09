@@ -25,9 +25,9 @@
     </select>
 
     <script type="module">
-      import * as THREE from 'https://cdn.skypack.dev/three'
-      import { GLTFLoader } from 'https://cdn.skypack.dev/three/examples/jsm/loaders/GLTFLoader.js'
-      import { OrbitControls } from 'https://cdn.skypack.dev/three/examples/jsm/controls/OrbitControls.js'
+      import * as THREE from 'https://unpkg.com/three@0.150.1/build/three.module.js'
+      import { GLTFLoader } from 'https://unpkg.com/three@0.150.1/examples/jsm/loaders/GLTFLoader.js'
+      import { OrbitControls } from 'https://unpkg.com/three@0.150.1/examples/jsm/controls/OrbitControls.js'
 
       const scene = new THREE.Scene()
       scene.background = new THREE.Color(0xf0f0f0)
@@ -54,9 +54,13 @@
       let currentModel = null
 
       function loadModel(fileName) {
+        const url = `https://stuart-mcneill.github.io/3DFoot/${fileName}`
+        console.log('Loading model:', url)
+
         loader.load(
-          `https://stuart-mcneill.github.io/3DFoot/${fileName}`,
+          url,
           (gltf) => {
+            console.log('Model loaded:', fileName)
             if (currentModel) scene.remove(currentModel)
             currentModel = gltf.scene
             currentModel.scale.set(10, 10, 10)
