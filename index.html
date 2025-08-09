@@ -8,13 +8,13 @@
     canvas { display: block; }
   </style>
 
-  <!-- Import map to resolve module names -->
+  <!-- Import map using esm.sh CDN -->
   <script type="importmap">
     {
       "imports": {
-        "three": "https://cdn.jsdelivr.net/npm/three@0.154.0/build/three.module.js",
-        "three/examples/jsm/loaders/GLTFLoader.js": "https://cdn.jsdelivr.net/npm/three@0.154.0/examples/jsm/loaders/GLTFLoader.js",
-        "three/examples/jsm/controls/OrbitControls.js": "https://cdn.jsdelivr.net/npm/three@0.154.0/examples/jsm/controls/OrbitControls.js"
+        "three": "https://esm.sh/three@0.154.0",
+        "three/examples/jsm/loaders/GLTFLoader.js": "https://esm.sh/three@0.154.0/examples/jsm/loaders/GLTFLoader.js",
+        "three/examples/jsm/controls/OrbitControls.js": "https://esm.sh/three@0.154.0/examples/jsm/controls/OrbitControls.js"
       }
     }
   </script>
