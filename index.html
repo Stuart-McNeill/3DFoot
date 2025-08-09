@@ -10,11 +10,10 @@
 </head>
 <body>
   <script type="module">
-    import * as THREE from 'https://unpkg.com/three@0.154.0/build/three.module.js'
-    import { GLTFLoader } from 'https://unpkg.com/three@0.154.0/examples/jsm/loaders/GLTFLoader.js'
-    import { OrbitControls } from 'https://unpkg.com/three@0.154.0/examples/jsm/controls/OrbitControls.js'
+    import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.154.0/build/three.module.js'
+    import { GLTFLoader } from 'https://cdn.jsdelivr.net/npm/three@0.154.0/examples/jsm/loaders/GLTFLoader.js'
+    import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.154.0/examples/jsm/controls/OrbitControls.js'
 
-    // Scene setup
     const scene = new THREE.Scene()
     scene.background = new THREE.Color(0xf0f0f0)
 
@@ -28,7 +27,6 @@
     const controls = new OrbitControls(camera, renderer.domElement)
     controls.enableDamping = true
 
-    // Lighting
     const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 1)
     hemiLight.position.set(0, 20, 0)
     scene.add(hemiLight)
@@ -37,13 +35,12 @@
     dirLight.position.set(3, 10, 10)
     scene.add(dirLight)
 
-    // Load GLB model
     const loader = new GLTFLoader()
     loader.load(
       'https://stuart-mcneill.github.io/3DFoot/LeftFoot.glb',
       (gltf) => {
         const model = gltf.scene
-        model.scale.set(10, 10, 10) // Adjust scale as needed
+        model.scale.set(10, 10, 10)
         model.position.set(0, 0, 0)
         scene.add(model)
       },
@@ -53,7 +50,6 @@
       }
     )
 
-    // Animation loop
     function animate() {
       requestAnimationFrame(animate)
       controls.update()
@@ -61,7 +57,6 @@
     }
     animate()
 
-    // Handle window resize
     window.addEventListener('resize', () => {
       camera.aspect = window.innerWidth / window.innerHeight
       camera.updateProjectionMatrix()
