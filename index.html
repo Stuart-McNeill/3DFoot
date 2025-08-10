@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Foot Pain Mapping</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    html, body { height:100%; margin:0; overflow:hidden; }
+    #three-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      display: block;
+    }
+    #ui-panel {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      background: rgba(255,255,255,0.95);
+      padding: 12px;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.1);
+      font-family: Arial, sans-serif;
+      font-size: 13px;
+      z-index: 10;
+      max-width: 320px;
+    }
+    button.toggle-foot, button#download-csv {
+      margin: 4px 4px 8px 0;
+      padding: 6px 10px;
+      cursor: pointer;
+    }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #ddd; padding: 6px; text-align: left; }
+    #status {
+      font-size: 12px;
+      color: #444;
+      margin-bottom: 8px;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="three-canvas"></canvas>
+
+  <div id="ui-panel" aria-live="polite">
+    <div id="status">Loading Right Foot...</div>
+    <div>
+      <button class="toggle-foot" data-foot="Right">Right Foot</button>
+      <button class="toggle-foot" data-foot="Left">Left Foot</button>
+    </div>
+    <h3>Foot Pain Map</h3>
+    <table id="score-table" aria-label="Foot pain locations">
+      <thead>
+        <tr><th>#</th><th>Location</th><th>Marked</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    <button id="download-csv">Download CSV</button>
+  </div>
+
+  <script type="module" src="./main.js"></script>
+</body>
+</html>
