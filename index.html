@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>3D Foot Pain Mapper</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      font-family: sans-serif;
+    }
+    #controls {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      background: rgba(255, 255, 255, 0.8);
+      padding: 10px;
+      border-radius: 8px;
+      z-index: 10;
+    }
+    button {
+      padding: 6px 12px;
+      cursor: pointer;
+    }
+    canvas {
+      display: block;
+    }
+  </style>
+
+  <!-- ✅ Import Map for Three.js -->
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://esm.sh/three@0.154.0",
+        "three/examples/jsm/loaders/GLTFLoader.js": "https://esm.sh/three@0.154.0/examples/jsm/loaders/GLTFLoader.js",
+        "three/examples/jsm/controls/OrbitControls.js": "https://esm.sh/three@0.154.0/examples/jsm/controls/OrbitControls.js"
+      }
+    }
+  </script>
+</head>
+
+<body>
+  <!-- 🧭 UI Controls -->
+  <div id="controls">
+    <button id="leftBtn">Left Foot</button>
+    <button id="rightBtn">Right Foot</button>
+    <button id="clearBtn">Clear Paint</button>
+  </div>
+
+  <!-- 🎨 Canvas for Three.js -->
+  <canvas id="canvas"></canvas>
+
+  <!-- 🚀 Main JS Module -->
+  <script type="module" src="main.js"></script>
+</body>
+</html>
