@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>3D Foot Pain Mapper</title>
+  <style>
+    body { margin: 0; overflow: hidden; font-family: sans-serif; }
+    #controls {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 1;
+      background: rgba(255, 255, 255, 0.9);
+      padding: 10px;
+      border-radius: 6px;
+    }
+    button, select {
+      margin: 4px 0;
+      padding: 6px 10px;
+      font-size: 14px;
+    }
+  </style>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://esm.sh/three@0.154.0",
+        "three/examples/jsm/loaders/GLTFLoader.js": "https://esm.sh/three@0.154.0/examples/jsm/loaders/GLTFLoader.js",
+        "three/examples/jsm/controls/OrbitControls.js": "https://esm.sh/three@0.154.0/examples/jsm/controls/OrbitControls.js"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="controls">
+    <select id="footSelector">
+      <option value="LeftFoot.glb">Left Foot</option>
+      <option value="RightFoot.glb">Right Foot</option>
+    </select>
+    <br />
+    <button id="undoBtn">Undo</button>
+    <button id="clearBtn">Clear</button>
+    <button id="exportBtn">Export CSV</button>
+    <br />
+    <label><input type="radio" name="mode" value="marker" checked /> Marker Mode</label>
+    <label><input type="radio" name="mode" value="paint" /> Paint Mode</label>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three'
+    import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
+    import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+
+    const scene = new THREE.Scene()
+    scene.background = new THREE.Color(0xf0f0f0)
+
+    const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000)
+    camera.position.set(0, 1, 5)
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true })
+    renderer.setSize(window.innerWidth, window.innerHeight)
+    document.body.appendChild(renderer.domElement)
+
+    const controls = new OrbitControls(camera, renderer.domElement)
+    controls.enableDamping = true
+
+    const light = new THREE.HemisphereLight(0xffffff, 0x444444, 1)
+    scene.add(light)
+
+    const loader = new GLTFLoader()
+    let currentModel = null
+
+    const markers = []
+    const paintedDots = []
+    let currentMode = 'marker'
+
+    const regionMap = {
+      'heel': { color: [255, 0, 0], marked: false },
+      'arch': { color: [0, 0, 255], marked: false },
+      'toes': { color: [0, 255, 0], marked: false },
+      'lateral': { color: [255, 255, 0], marked: false },
+      'medial': { color: [255, 0, 255], marked: false }
+    }
+
+    function loadModel(fileName) {
+      const url = `https://stuart-mcneill.github.io/3DFoot/${fileName}`
+      loader.load(
+        url,
+        (gltf) => {
+          if (currentModel) scene.remove(currentModel)
+          currentModel = gltf.scene
+          currentModel.scale.set(10, 10, 10)
+          currentModel.position.set(0, 0, 0)
+          scene.add(currentModel)
+        },
+        undefined,
+        (error) => {
+          console.error('Error loading model:', error)
+        }
+      )
+    }
+
+    function getRegionFromColor(color) {
+      const r = Math.round(color.r * 255)
+      const g = Math.round(color.g * 255)
+      const b = Math.round(color.b * 255)
+      for (const [region, data] of Object.entries(regionMap)) {
+        const [cr, cg, cb] = data.color
+        if (r === cr && g === cg && b === cb) return region
+      }
+      return 'Unknown'
+    }
+
+    function getRegionFromIntersect(intersect) {
+      const attr = intersect.object.geometry.attributes.color
+      if (!attr) return 'Unknown'
+      const idx = intersect.face.a
+      const color = new THREE.Color().fromArray(attr.array, idx * 3)
+      return getRegionFromColor(color)
+    }
+
+    function addMarker(position, region = 'Unknown') {
+      const marker = new THREE.Mesh(
+        new THREE.SphereGeometry(0.05, 16, 16),
+        new THREE.MeshStandardMaterial({ color: 0xff0000 })
+      )
+      marker.position.copy(position)
+      marker.userData.region = region
+      scene.add(marker)
+      markers.push(marker)
+      if (regionMap[region]) regionMap[region].marked = true
+    }
+
+    function paintDot(position) {
+      const dot = new THREE.Mesh(
+        new THREE.SphereGeometry(0.02, 8, 8),
+        new THREE.MeshStandardMaterial({ color: 0x0000ff })
+      )
+      dot.position.copy(position)
+      scene.add(dot)
+      paintedDots.push(dot)
+    }
+
+    function undoMarker() {
+      if (currentMode === 'marker' && markers.length) {
+        const removed = markers.pop()
+        scene.remove(removed)
+        const region = removed.userData.region
+        if (regionMap[region]) {
+          regionMap[region].marked = markers.some(m => m.userData.region === region)
+        }
+      } else if (currentMode === 'paint' && paintedDots.length) {
+        scene.remove(paintedDots.pop())
+      }
+    }
+
+    function clearMarkers() {
+      markers.forEach(m => scene.remove(m))
+      paintedDots.forEach(p => scene.remove(p))
+      markers.length = 0
+      paintedDots.length = 0
+      for (const region in regionMap) regionMap[region].marked = false
+    }
+
+    function exportRegionTableToCSV() {
+      const rows = Object.entries(regionMap).map(([region, data], i) => {
+        return `${i + 1},${region},${data.marked ? 1 : 0}`
+      })
+      const csvContent = "Location Number,Description,Marked\n" + rows.join("\n")
+      const blob = new Blob([csvContent], { type: 'text/csv' })
+      const url = URL.createObjectURL(blob)
+
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'region_table.csv'
+      a.click()
+      URL.revokeObjectURL(url)
+    }
+
+    const raycaster = new THREE.Raycaster()
+    const mouse = new THREE.Vector2()
+
+    renderer.domElement.addEventListener('click', (event) => {
+      const rect = renderer.domElement.getBoundingClientRect()
+      mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1
+      mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1
+
+      raycaster.setFromCamera(mouse, camera)
+      if (currentModel) {
+        const intersects = raycaster.intersectObject(currentModel, true)
+        if (intersects.length > 0) {
+          const point = intersects[0].point
+          const region = getRegionFromIntersect(intersects[0])
+          if (currentMode === 'marker') {
+            addMarker(point, region)
+          } else if (currentMode === 'paint') {
+            paintDot(point)
+          }
+        }
+      }
+    })
+
+    document.getElementById('footSelector').addEventListener('change', (e) => {
+      loadModel(e.target.value)
+      clearMarkers()
+    })
+
+    document.getElementById('undoBtn').addEventListener('click', undoMarker)
+    document.getElementById('clearBtn').addEventListener('click', clearMarkers)
+    document.getElementById('exportBtn').addEventListener('click', exportRegionTableToCSV)
+
+    document.querySelectorAll('input[name="mode"]').forEach(radio => {
+      radio.addEventListener('change', (e) => {
+        currentMode = e.target.value
+      })
+    })
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight
+      camera.updateProjectionMatrix()
+      renderer.setSize(window.innerWidth, window.innerHeight)
+    })
+
+    load
