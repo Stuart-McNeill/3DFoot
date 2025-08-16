@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>3D Foot Pain Viewer</title>
+  <style>
+    body { margin: 0; overflow: hidden; font-family: sans-serif; }
+    #info {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: rgba(0,0,0,0.7);
+      color: white;
+      padding: 10px;
+      border-radius: 5px;
+      font-size: 14px;
+      z-index: 1;
+    }
+  </style>
+</head>
+<body>
+  <div id="info">Loading model...</div>
+  <script type="module">
+    import * as THREE from 'https://cdn.skypack.dev/three';
+    import { GLTFLoader } from 'https://cdn.skypack.dev/three/examples/jsm/loaders/GLTFLoader.js';
+    import { OrbitControls } from 'https://cdn.skypack.dev/three/examples/jsm/controls/OrbitControls.js';
+
+    const regionMap = {
+      COLOR_0: "Medial Arch",
+      COLOR_1: "Plantar Toe 1",
+      COLOR_2: "Dorsal MTP 1",
+      COLOR_3: "Plantar MTP 1",
+      COLOR_4: "Dorsal Toe 2",
+      COLOR_5: "Plantar Toe 2",
+      COLOR_6: "Dorsal MTP 2",
+      COLOR_7: "Plantar MTP 2",
+      COLOR_8: "Dorsal Toe 3",
+      COLOR_9: "Plantar Toe 3",
+      COLOR_10: "Dorsal MTP 3",
+      COLOR_11: "Plantar MTP 3",
+      COLOR_12: "Dorsal Toe 4",
+      COLOR_13: "Plantar Toe 4",
+      COLOR_14: "Dorsal MTP 4",
+      COLOR_15: "Plantar MTJ 4",
+      COLOR_16: "Dorsal Toe 5",
+      COLOR_17: "Plantar Toe 5",
+      COLOR_18: "Dorsal MTP 5",
+      COLOR_19: "Plantar MTP 5",
+      COLOR_20: "Dorsal Midfoot",
+      COLOR_21: "Dorsal Ankle",
+      COLOR_22: "Plantar Lateral",
+      COLOR_23: "Plantar Heel",
+      COLOR_24: "Posterior Heel",
+      COLOR_25: "Posterior Insertion",
+      COLOR_26: "Posterior Midportion",
+      COLOR_27: "Posterior Leg",
+      COLOR_28: "Medial MTP",
+      COLOR_29: "Medial Midfoot",
+      COLOR_30: "Lateral Midfoot",
+      COLOR_31: "Posterior Medial",
+      COLOR_32: "Posterior Lateral",
+      COLOR_33: "Medial Leg",
+      COLOR_34: "Lateral Leg",
+      COLOR_35: "Dorsal Toe 1"
+    };
+
+    let scene, camera, renderer, controls;
+    let mesh, currentLayer = 0;
+    const infoEl = document.getElementById('info');
+
+    init();
+    loadModel();
+
+    function init() {
+      scene = new THREE.Scene();
+      camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+      camera.position.set(0, 1, 3);
+
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      document.body.appendChild(renderer.domElement);
+
+      controls = new OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+
+      const light = new THREE.HemisphereLight(0xffffff, 0x444444, 1.2);
+      scene.add(light);
+
+      window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      });
+
+      window.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowRight') {
+          currentLayer = (currentLayer + 1) % 36;
+          applyColorLayer();
+        } else if (e.key === 'ArrowLeft') {
+          currentLayer = (currentLayer - 1 + 36) % 36;
+          applyColorLayer();
+        }
+      });
+    }
+
+    function loadModel() {
+      const loader = new GLTFLoader();
+      loader.load('model.glb', (gltf) => {
+        mesh = gltf.scene.children[0];
+        mesh.geometry = mesh.geometry.toNonIndexed(); // Ensure direct access to vertices
+        scene.add(mesh);
+        applyColorLayer();
+        animate();
+      });
+    }
+
+    function applyColorLayer() {
+      const attrName = `COLOR_${currentLayer}`;
+      const regionName = regionMap[attrName] || "Unknown Region";
+
+      const geometry = mesh.geometry;
+      const colorAttr = geometry.attributes[attrName];
+
+      if (!colorAttr) {
+        infoEl.textContent = `Layer ${attrName} not found`;
+        return;
+      }
+
+      geometry.setAttribute('color', colorAttr);
+      const material = new THREE.MeshBasicMaterial({ vertexColors: true });
+      mesh.material = material;
+
+      infoEl.textContent = `Use ← / → to cycle vertex color layers  
+(current: ${attrName} — ${regionName})`;
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+  </script>
+</body>
+</html>
