@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>3D Foot Mapping</title>
+<style>
+  body { margin: 0; overflow: hidden; background: #dfe6ee; }
+  canvas { display: block; }
+  #ui {
+    position: absolute; top: 10px; left: 10px;
+    display: flex; gap: 10px;
+  }
+  button {
+    background: #4CAF50; color: white;
+    border: none; border-radius: 6px;
+    padding: 6px 12px; font: 14px system-ui, sans-serif;
+    cursor: pointer;
+  }
+  button:hover { background: #45a049; }
+</style>
+</head>
+<body>
+<div id="ui">
+  <button id="leftBtn">Left Foot</button>
+  <button id="rightBtn">Right Foot</button>
+  <button id="undoBtn">Undo</button>
+  <button id="clearBtn">Clear</button>
+  <button id="downloadBtn">Download CSV</button>
+</div>
+
+<script type="module">
+import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js";
+import { OrbitControls } from "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/controls/OrbitControls.js";
+import { GLTFLoader } from "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/loaders/GLTFLoader.js";
+
+const urls = {
+  left: "https://stuart-mcneill.github.io/3DFoot/Leftfoot.gltf",
+  right: "https://stuart-mcneill.github.io/3DFoot/Rightfoot.gltf"
+};
+
+const regionMap = {
+  Color_0: "Medial Arch", Color_1: "Plantar Toe 1", Color_2: "Dorsal MTP 1", Color_3: "Plantar MTP 1",
+  Color_4: "Dorsal Toe 2", Color_5: "Plantar Toe 2", Color_6: "Dorsal MTP 2", Color_7: "Plantar MTP 2",
+  Color_8: "Dorsal Toe 3", Color_9: "Plantar Toe 3", Color_10: "Dorsal MTP 3", Color_11: "Plantar MTP 3",
+  Color_12: "Dorsal Toe 4", Color_13: "Plantar Toe 4", Color_14: "Dorsal MTP 4", Color_15: "Plantar MTJ 4",
+  Color_16: "Dorsal Toe 5", Color_17: "Plantar Toe 5", Color_18: "Dorsal MTP 5", Color_19: "Plantar MTP 5",
+  Color_20: "Dorsal Midfoot", Color_21: "Dorsal Ankle", Color_22: "Plantar Lateral", Color_23: "Plantar Heel",
+  Color_24: "Posterior Heel", Color_25: "Posterior Insertion", Color_26: "Posterior Midportion", Color_27: "Posterior Leg",
+  Color_28: "Medial MTP", Color_29: "Medial Midfoot", Color_30: "Lateral Midfoot", Color_31: "Posterior Medial",
+  Color_32: "Posterior Lateral", Color_33: "Medial Leg", Color_34: "Lateral Leg", Color_35: "Dorsal Toe 1"
+};
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.01, 1000);
+camera.position.set(0,1,2);
+
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1));
+const dir = new THREE.DirectionalLight(0xffffff, 0.9);
+dir.position.set(3,10,10);
+scene.add(dir);
+
+let footMesh = null;
+let history = [];
+let annotations = [];
+const loader = new GLTFLoader();
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+let currentFoot = "left";
+
+async function loadFoot(side){
+  if(footMesh){
+    scene.remove(footMesh.parent||footMesh);
+    footMesh = null;
+    history = [];
+    annotations = [];
+  }
+
+  loader.load(urls[side], async (gltf)=>{
+    const root = gltf.scene;
+    scene.add(root);
+    root.traverse(obj=>{
+      if(obj.isMesh){
+        obj.material = new THREE.MeshStandardMaterial({color:0xcccccc, metalness:0, roughness:1, vertexColors:true});
+        footMesh = obj;
+      }
+    });
+  });
+}
+
+// Paint face red and record region
+function handleClick(event){
+  if(!footMesh) return;
+
+  mouse.x = (event.clientX/window.innerWidth)*2-1;
+  mouse.y = -(event.clientY/window.innerHeight)*2+1;
+  raycaster.setFromCamera(mouse, camera);
+
+  const intersects = raycaster.intersectObject(footMesh,true);
+  if(intersects.length>0){
+    const intersect = intersects[0];
+    const g = intersect.object.geometry;
+    const face = intersect.face;
+
+    // Determine region via vertex color layer
+    let region = "Unknown";
+    for(const key in g.attributes){
+      if(key.startsWith("COLOR_")){
+        const col = g.attributes[key];
+        const val = col.getX(face.a)+col.getY(face.a)+col.getZ(face.a);
+        if(val>0){ region = regionMap[key]; break; }
+      }
+    }
+
+    [face.a, face.b, face.c].forEach(i=>g.attributes.color.setXYZ(i,1,0,0));
+    g.attributes.color.needsUpdate=true;
+
+    history.push({geometry:g, vertices:[face.a,face.b,face.c]});
+    annotations.push({foot:currentFoot, region, time:new Date().toISOString()});
+  }
+}
+
+// Undo / Clear / Download
+document.getElementById("undoBtn").onclick=()=>{
+  const last = history.pop();
+  if(!last) return;
+  last.vertices.forEach(i=>last.geometry.attributes.color.setXYZ(i,0,0,0));
+  last.geometry.attributes.color.needsUpdate=true;
+  annotations.pop();
+};
+
+document.getElementById("clearBtn").onclick=()=>{
+  if(!footMesh) return;
+  const g=footMesh.geometry;
+  for(let i=0;i<g.attributes.color.count;i++){
+    g.attributes.color.setXYZ(i,0,0,0);
+  }
+  g.attributes.color.needsUpdate=true;
+  history=[];
+  annotations=[];
+};
+
+document.getElementById("downloadBtn").onclick=()=>{
+  const csv="Foot,Region,Timestamp\n"+annotations.map(a=>`${a.foot},${a.region},${a.time}`).join("\n");
+  const blob=new Blob([csv],{type:"text/csv"});
+  const link=document.createElement("a");
+  link.href=URL.createObjectURL(blob);
+  link.download="foot_annotations.csv";
+  link.click();
+};
+
+// Foot buttons
+document.getElementById("leftBtn").onclick=()=>{currentFoot="left"; loadFoot("left");};
+document.getElementById("rightBtn").onclick=()=>{currentFoot="right"; loadFoot("right");};
+
+// Click detection
+window.addEventListener("click", handleClick);
+
+loadFoot("left");
+
+function animate(){
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene,camera);
+}
+animate();
+
+window.addEventListener("resize",()=>{
+  camera.aspect=window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth,window.innerHeight);
+});
+</script>
+</body>
+</html>
