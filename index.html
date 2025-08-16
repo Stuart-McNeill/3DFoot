@@ -2,64 +2,30 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Left Foot Viewer - Vertex Color Cycler</title>
+  <title>Foot Viewer - Vertex Color Cycler</title>
   <style>
-    body { margin: 0; overflow: hidden; background: #dfe6ee; }
+    body { margin: 0; overflow: hidden; background: #dfe6ee; font-family: system-ui, sans-serif; }
     canvas { display: block; }
-    #info {
-      position: absolute; top: 10px; left: 10px;
+    #info, #toggleBtn {
+      position: absolute; left: 10px;
       background: rgba(0,0,0,0.7); color: #fff; padding: 6px 10px;
-      font: 14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-      border-radius: 6px;
+      font-size: 14px; border-radius: 6px;
     }
+    #info { top: 10px; }
+    #toggleBtn { top: 50px; cursor: pointer; }
   </style>
 </head>
 <body>
 <div id="info">Use ← / → to cycle vertex color layers (current: COLOR_0)</div>
+<div id="toggleBtn">Switch to Right Foot</div>
 
 <script type="module">
   import * as THREE from "https://unpkg.com/three@0.165.0/build/three.module.js?module";
   import { OrbitControls } from "https://unpkg.com/three@0.165.0/examples/jsm/controls/OrbitControls.js?module";
   import { GLTFLoader } from "https://unpkg.com/three@0.165.0/examples/jsm/loaders/GLTFLoader.js?module";
 
-  const regionMap = {
-    COLOR_0: "Medial Arch",
-    COLOR_1: "Plantar Toe 1",
-    COLOR_2: "Dorsal MTP 1",
-    COLOR_3: "Plantar MTP 1",
-    COLOR_4: "Dorsal Toe 2",
-    COLOR_5: "Plantar Toe 2",
-    COLOR_6: "Dorsal MTP 2",
-    COLOR_7: "Plantar MTP 2",
-    COLOR_8: "Dorsal Toe 3",
-    COLOR_9: "Plantar Toe 3",
-    COLOR_10: "Dorsal MTP 3",
-    COLOR_11: "Plantar MTP 3",
-    COLOR_12: "Dorsal Toe 4",
-    COLOR_13: "Plantar Toe 4",
-    COLOR_14: "Dorsal MTP 4",
-    COLOR_15: "Plantar MTJ 4",
-    COLOR_16: "Dorsal Toe 5",
-    COLOR_17: "Plantar Toe 5",
-    COLOR_18: "Dorsal MTP 5",
-    COLOR_19: "Plantar MTP 5",
-    COLOR_20: "Dorsal Midfoot",
-    COLOR_21: "Dorsal Ankle",
-    COLOR_22: "Plantar Lateral",
-    COLOR_23: "Plantar Heel",
-    COLOR_24: "Posterior Heel",
-    COLOR_25: "Posterior Insertion",
-    COLOR_26: "Posterior Midportion",
-    COLOR_27: "Posterior Leg",
-    COLOR_28: "Medial MTP",
-    COLOR_29: "Medial Midfoot",
-    COLOR_30: "Lateral Midfoot",
-    COLOR_31: "Posterior Medial",
-    COLOR_32: "Posterior Lateral",
-    COLOR_33: "Medial Leg",
-    COLOR_34: "Lateral Leg",
-    COLOR_35: "Dorsal Toe 1"
-  };
+  const infoEl = document.getElementById('info');
+  const toggleBtn = document.getElementById('toggleBtn');
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.01, 1000);
@@ -81,53 +47,86 @@
   let targetMesh = null;
   let colorAttrs = [];
   let currentIndex = 0;
+  let currentFoot = 'left';
 
-  const infoEl = document.getElementById('info');
-
-  const loader = new GLTFLoader();
-  loader.load(
-    'https://stuart-mcneill.github.io/3DFoot/Leftfoot.gltf',
-    async (gltf) => {
-      const root = gltf.scene;
-      scene.add(root);
-
-      root.traverse((obj) => {
-        if (obj.type === 'Mesh') {
-          obj.material = new THREE.MeshStandardMaterial({
-            vertexColors: true,
-            metalness: 0.0,
-            roughness: 1.0,
-            side: THREE.FrontSide
-          });
-          targetMesh = obj;
-        }
-      });
-
-      if (!targetMesh) {
-        console.warn('No mesh found');
-        return;
-      }
-
-      const accessorDefs = gltf.parser.json.meshes[0].primitives[0].attributes;
-      const geometry = targetMesh.geometry;
-
-      for (const key in accessorDefs) {
-        if (key.startsWith('COLOR_')) {
-          const attrName = key;
-          const accessorIndex = accessorDefs[key];
-          const accessor = await gltf.parser.getDependency('accessor', accessorIndex);
-          geometry.setAttribute(attrName, new THREE.BufferAttribute(accessor.array, accessor.itemSize, accessor.normalized));
-          colorAttrs.push(attrName);
-        }
-      }
-
-      colorAttrs.sort((a, b) => attrIndex(a) - attrIndex(b));
-      console.log('Manually extracted vertex color layers:', colorAttrs);
-      applyColorLayer();
+  const regionMaps = {
+    left: {
+      COLOR_0: "Medial Arch", COLOR_1: "Plantar Toe 1", COLOR_2: "Dorsal MTP 1", COLOR_3: "Plantar MTP 1",
+      COLOR_4: "Dorsal Toe 2", COLOR_5: "Plantar Toe 2", COLOR_6: "Dorsal MTP 2", COLOR_7: "Plantar MTP 2",
+      COLOR_8: "Dorsal Toe 3", COLOR_9: "Plantar Toe 3", COLOR_10: "Dorsal MTP 3", COLOR_11: "Plantar MTP 3",
+      COLOR_12: "Dorsal Toe 4", COLOR_13: "Plantar Toe 4", COLOR_14: "Dorsal MTP 4", COLOR_15: "Plantar MTJ 4",
+      COLOR_16: "Dorsal Toe 5", COLOR_17: "Plantar Toe 5", COLOR_18: "Dorsal MTP 5", COLOR_19: "Plantar MTP 5",
+      COLOR_20: "Dorsal Midfoot", COLOR_21: "Dorsal Ankle", COLOR_22: "Plantar Lateral", COLOR_23: "Plantar Heel",
+      COLOR_24: "Posterior Heel", COLOR_25: "Posterior Insertion", COLOR_26: "Posterior Midportion", COLOR_27: "Posterior Leg",
+      COLOR_28: "Medial MTP", COLOR_29: "Medial Midfoot", COLOR_30: "Lateral Midfoot", COLOR_31: "Posterior Medial",
+      COLOR_32: "Posterior Lateral", COLOR_33: "Medial Leg", COLOR_34: "Lateral Leg", COLOR_35: "Dorsal Toe 1"
     },
-    undefined,
-    (err) => console.error('Error loading GLTF:', err)
-  );
+    right: {
+      COLOR_0: "Medial Arch (Right)", COLOR_1: "Plantar Toe 1 (Right)", COLOR_2: "Dorsal MTP 1 (Right)", COLOR_3: "Plantar MTP 1 (Right)",
+      COLOR_4: "Dorsal Toe 2 (Right)", COLOR_5: "Plantar Toe 2 (Right)", COLOR_6: "Dorsal MTP 2 (Right)", COLOR_7: "Plantar MTP 2 (Right)",
+      COLOR_8: "Dorsal Toe 3 (Right)", COLOR_9: "Plantar Toe 3 (Right)", COLOR_10: "Dorsal MTP 3 (Right)", COLOR_11: "Plantar MTP 3 (Right)",
+      COLOR_12: "Dorsal Toe 4 (Right)", COLOR_13: "Plantar Toe 4 (Right)", COLOR_14: "Dorsal MTP 4 (Right)", COLOR_15: "Plantar MTJ 4 (Right)",
+      COLOR_16: "Dorsal Toe 5 (Right)", COLOR_17: "Plantar Toe 5 (Right)", COLOR_18: "Dorsal MTP 5 (Right)", COLOR_19: "Plantar MTP 5 (Right)",
+      COLOR_20: "Dorsal Midfoot (Right)", COLOR_21: "Dorsal Ankle (Right)", COLOR_22: "Plantar Lateral (Right)", COLOR_23: "Plantar Heel (Right)",
+      COLOR_24: "Posterior Heel (Right)", COLOR_25: "Posterior Insertion (Right)", COLOR_26: "Posterior Midportion (Right)", COLOR_27: "Posterior Leg (Right)",
+      COLOR_28: "Medial MTP (Right)", COLOR_29: "Medial Midfoot (Right)", COLOR_30: "Lateral Midfoot (Right)", COLOR_31: "Posterior Medial (Right)",
+      COLOR_32: "Posterior Lateral (Right)", COLOR_33: "Medial Leg (Right)", COLOR_34: "Lateral Leg (Right)", COLOR_35: "Dorsal Toe 1 (Right)"
+    }
+  };
+
+  function loadFootModel(url, footSide) {
+    targetMesh = null;
+    colorAttrs = [];
+    currentIndex = 0;
+
+    loader.load(
+      url,
+      async (gltf) => {
+        scene.clear();
+        scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1.0));
+        scene.add(dir);
+
+        const root = gltf.scene;
+        scene.add(root);
+
+        root.traverse((obj) => {
+          if (obj.type === 'Mesh') {
+            obj.material = new THREE.MeshStandardMaterial({
+              vertexColors: true,
+              metalness: 0.0,
+              roughness: 1.0,
+              side: THREE.FrontSide
+            });
+            targetMesh = obj;
+          }
+        });
+
+        if (!targetMesh) {
+          console.warn('No mesh found');
+          return;
+        }
+
+        const accessorDefs = gltf.parser.json.meshes[0].primitives[0].attributes;
+        const geometry = targetMesh.geometry;
+
+        for (const key in accessorDefs) {
+          if (key.startsWith('COLOR_')) {
+            const attrName = key;
+            const accessorIndex = accessorDefs[key];
+            const accessor = await gltf.parser.getDependency('accessor', accessorIndex);
+            geometry.setAttribute(attrName, new THREE.BufferAttribute(accessor.array, accessor.itemSize, accessor.normalized));
+            colorAttrs.push(attrName);
+          }
+        }
+
+        colorAttrs.sort((a, b) => attrIndex(a) - attrIndex(b));
+        currentFoot = footSide;
+        applyColorLayer();
+      },
+      undefined,
+      (err) => console.error('Error loading GLTF:', err)
+    );
+  }
 
   function attrIndex(name) {
     const n = parseInt(name.split('_')[1], 10);
@@ -137,41 +136,9 @@
   function applyColorLayer() {
     if (!targetMesh || !colorAttrs.length) return;
     const attrName = colorAttrs[currentIndex];
-    const regionName = regionMap[attrName] || "Unknown Region";
+    const regionName = regionMaps[currentFoot][attrName] || "Unknown Region";
     const g = targetMesh.geometry;
 
     if (g.attributes[attrName]) {
       g.setAttribute('color', g.attributes[attrName]);
-      g.attributes.color.needsUpdate = true;
-      infoEl.textContent = `Use ← / → to cycle vertex color layers  
-(current: ${attrName} — ${regionName})`;
-      console.log(`Applied ${attrName}`);
-    } else {
-      console.warn(`Attribute ${attrName} not found`);
-    }
-  }
-
-  window.addEventListener('keydown', (e) => {
-    if (!colorAttrs.length) return;
-    if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
-      e.preventDefault();
-      const dir = e.key === 'ArrowRight' ? 1 : -1;
-      currentIndex = (currentIndex + dir + colorAttrs.length) % colorAttrs.length;
-      applyColorLayer();
-    }
-  });
-
-  window.addEventListener('resize', () => {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-  });
-
-  (function animate() {
-    requestAnimationFrame(animate);
-    controls.update();
-    renderer.render(scene, camera);
-  })();
-</script>
-</body>
-</html>
+      g.attributes.color.needsUpdate
