@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>3D Foot Mapping</title>
+  <style>
+    body { margin: 0; background: #dfe6ee; overflow: hidden; }
+    #ui {
+      position: absolute; top: 10px; left: 10px;
+      display: flex; gap: 10px;
+    }
+    button {
+      padding: 6px 12px;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+      font-size: 14px;
+      background: #4CAF50;
+      color: white;
+    }
+    button:hover { background: #45a049; }
+  </style>
+</head>
+<body>
+  <div id="ui">
+    <button id="undoBtn">Undo</button>
+    <button id="clearBtn">Clear</button>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
+    import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
+    import { GLTFLoader } from 'https://unpkg.com/three@0.160.0/examples/jsm/loaders/GLTFLoader.js';
+
+    let camera, scene, renderer, controls, raycaster, mouse;
+    let footModel;
+    let history = []; // stack for undo
+    let originalColors = [];
+
+    init();
+    animate();
+
+    function init() {
+      scene = new THREE.Scene();
+
+      camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 100);
+      camera.position.set(0, 1.5, 3);
+
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      document.body.appendChild(renderer.domElement);
+
+      controls = new OrbitControls(camera, renderer.domElement);
+
+      raycaster = new THREE.Raycaster();
+      mouse = new THREE.Vector2();
+
+      const light = new THREE.HemisphereLight(0xffffff, 0x444444, 1.2);
+      light.position.set(0, 1, 0);
+      scene.add(light);
+
+      // Load foot model
+      const loader = new GLTFLoader();
+      loader.load('right_foot.glb', (gltf) => {
+        footModel = gltf.scene;
+        scene.add(footModel);
+
+        // ensure geometry has vertex colors
+        footModel.traverse((child) => {
+          if (child.isMesh) {
+            const geometry = child.geometry;
+            if (!geometry.attributes.color) {
+              const count = geometry.attributes.position.count;
+              const colors = new Float32Array(count * 3);
+              geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+            }
+            child.material.vertexColors = true;
+            originalColors.push(child.geometry.attributes.color.array.slice());
+          }
+        });
+      });
+
+      // Event listeners
+      window.addEventListener('resize', onWindowResize);
+      window.addEventListener('click', onClick);
+
+      document.getElementById('undoBtn').addEventListener('click', undoHighlight);
+      document.getElementById('clearBtn').addEventListener('click', clearHighlights);
+    }
+
+    function onWindowResize() {
+      camera.aspect = window.innerWidth/window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    function onClick(event) {
+      if (!footModel) return;
+
+      mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+      mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+      raycaster.setFromCamera(mouse, camera);
+      const intersects = raycaster.intersectObject(footModel, true);
+
+      if (intersects.length > 0) {
+        const intersect = intersects[0];
+        const geometry = intersect.object.geometry;
+        const colorAttr = geometry.attributes.color;
+
+        const index = intersect.face.a; // pick one vertex index
+        const oldColor = colorAttr.array.slice(index * 3, index * 3 + 3);
+        const newColor = [1, 0, 0]; // highlight red
+
+        // save for undo
+        history.push({ geometry, index, oldColor });
+
+        // apply color
+        colorAttr.setXYZ(index, ...newColor);
+        colorAttr.needsUpdate = true;
+      }
+    }
+
+    function undoHighlight() {
+      const last = history.pop();
+      if (!last) return;
+      const { geometry, index, oldColor } = last;
+      geometry.attributes.color.setXYZ(index, ...oldColor);
+      geometry.attributes.color.needsUpdate = true;
+    }
+
+    function clearHighlights() {
+      if (!footModel) return;
+      footModel.traverse((child, i) => {
+        if (child.isMesh && child.geometry.attributes.color) {
+          const attr = child.geometry.attributes.color;
+          const orig = originalColors[i];
+          attr.array.set(orig);
+          attr.needsUpdate = true;
+        }
+      });
+      history = [];
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+  </script>
+</body>
+</html>
