@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Left Foot Viewer - Vertex Color Cycler</title>
+  <style>
+    body { margin: 0; overflow: hidden; background: #dfe6ee; }
+    canvas { display: block; }
+    #info {
+      position: absolute; top: 10px; left: 10px;
+      background: rgba(0,0,0,0.6); color: white; padding: 6px 10px;
+      font-family: sans-serif; font-size: 14px; border-radius: 4px;
+    }
+  </style>
+</head>
+<body>
+<div id="info">Use ← / → to cycle COLOR layers</div>
+
+<script type="module">
+  import * as THREE from 'https://unpkg.com/three@0.155.0/build/three.module.js';
+  import { OrbitControls } from 'https://unpkg.com/three@0.155.0/examples/jsm/controls/OrbitControls.js?module';
+  import { GLTFLoader } from 'https://unpkg.com/three@0.155.0/examples/jsm/loaders/GLTFLoader.js?module';
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+  camera.position.set(0, 1, 2);
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  document.body.appendChild(renderer.domElement);
+
+  const controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+
+  const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 1.0);
+  hemiLight.position.set(0, 20, 0);
+  scene.add(hemiLight);
+
+  const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+  dirLight.position.set(3, 10, 10);
+  scene.add(dirLight);
+
+  const loader = new GLTFLoader();
+  let mesh;
+  let currentColorAttr = null;
+  let availableColorAttrs = [];
+
+  loader.load(
+    "https://stuart-mcneill.github.io/3DFoot/Leftfoot.gltf",
+    (gltf) => {
+      mesh = gltf.scene;
+      scene.add(mesh);
+
+      mesh.traverse((child) => {
+        if (child.isMesh) {
+          child.material = new THREE.MeshStandardMaterial({
+            vertexColors: true,
+            side: THREE.DoubleSide
+          });
+
+          // Detect available COLOR_X attributes
+          availableColorAttrs = Object.keys(child.geometry.attributes).filter(attr => attr.startsWith("COLOR_"));
+
+          // Set initial color layer
+          if (availableColorAttrs.length > 0) {
+            currentColorAttr = availableColorAttrs[0];
+            child.geometry.setAttribute("color", child.geometry.attributes[currentColorAttr]);
+            child.geometry.attributes.color.needsUpdate = true; // ✅ Trigger redraw
+            document.getElementById("info").textContent =
+              `Use ← / → to cycle COLOR layers (current: ${currentColorAttr})`;
+          }
+        }
+      });
+    },
+    undefined,
+    (error) => {
+      console.error("Error loading GLTF:", error);
+    }
+  );
+
+  // Cycle through vertex color layers with arrow keys
+  window.addEventListener("keydown", (event) => {
+    if (!mesh || availableColorAttrs.length === 0) return;
+
+    let direction = 0;
+    if (event.key === "ArrowRight") direction = 1;
+    if (event.key === "ArrowLeft") direction = -1;
+
+    if (direction !== 0) {
+      let currentIndex = availableColorAttrs.indexOf(currentColorAttr);
+      let nextIndex = (currentIndex + direction + availableColorAttrs.length) % availableColorAttrs.length;
+      currentColorAttr = availableColorAttrs[nextIndex];
+
+      mesh.traverse((child) => {
+        if (child.isMesh && child.geometry.attributes[currentColorAttr]) {
+          child.geometry.setAttribute("color", child.geometry.attributes[currentColorAttr]);
+          child.geometry.attributes.color.needsUpdate = true; // ✅ Trigger redraw
+        }
+      });
+
+      document.getElementById("info").textContent =
+        `Use ← / → to cycle COLOR layers (current: ${currentColorAttr})`;
+    }
+  });
+
+  window.addEventListener("resize", () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+
+  function animate() {
+    requestAnimationFrame(animate);
+    controls.update();
+    renderer.render(scene, camera);
+  }
+  animate();
+</script>
+</body>
+</html>
