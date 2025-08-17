@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>3D Foot Pain Mapping Tool</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; background: #1c1c1c; color: #f1f1f1; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+  #ui { position: fixed; top: 10px; left: 10px; z-index: 10; display: flex; flex-wrap: wrap; gap: 6px; }
+  #ui button { background: #2b2b2b; color: #f1f1f1; border: 1px solid #3a3a3a; padding: 6px 10px; border-radius: 6px; cursor: pointer; }
+  #ui button:hover { background: #333; }
+  #status { position: fixed; top: 10px; right: 10px; z-index: 10; background: #2b2b2b; border: 1px solid #3a3a3a; padding: 6px 10px; border-radius: 6px; font-size: 12px; opacity: 0.9; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+  <div id="ui">
+    <button id="clearMarkersBtn">Clear Markers (C)</button>
+    <button id="exportCSVDetailedBtn">Export CSV Detailed (E)</button>
+    <button id="exportCSVAppBtn">Export CSV App‑Style (A)</button>
+    <button id="loadLeftFootBtn">Load Left Foot (L)</button>
+    <button id="loadRightFootBtn">Load Right Foot (R)</button>
+  </div>
+  <div id="status">Loading: idle</div>
+
+  <script type="module">
+    import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.module.js';
+    import { GLTFLoader } from 'https://cdn.jsdelivr.net/npm/three@0.152.2/examples/jsm/loaders/GLTFLoader.js';
+    // If you want orbit controls for testing, uncomment next line and setup below:
+    // import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.152.2/examples/jsm/controls/OrbitControls.js';
+
+    let scene, camera, renderer, raycaster, mouse;
+    let footRoot = null;          // Root Object3D for the loaded foot
+    let footSide = 'left';
+    let markerGroup;
+    let colorAttrs = [];          // Array of vertex color BufferAttributes across meshes
+    let statusEl = document.getElementById('status');
+    let modelReady = false;
+
+    init();
+    loadFoot(footSide);
+
+    function setStatus(text) {
+      statusEl.textContent = text;
+    }
+
+    function init() {
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x111111);
+
+      camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.05, 100);
+      camera.position.set(0, 0.35, 1.2);
+
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      document.body.appendChild(renderer.domElement);
+
+      const hemiLight = new THREE.HemisphereLight(0xffffff, 0x222233, 0.9);
+      hemiLight.position.set(0, 1, 0);
+      scene.add(hemiLight);
+
+      const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
+      dirLight.position.set(1.5, 2, 1.5);
+      dirLight.castShadow = false;
+      scene.add(dirLight);
+
+      raycaster = new THREE.Raycaster();
+      mouse = new THREE.Vector2();
+
+      markerGroup = new THREE.Group();
+      scene.add(markerGroup);
+
+      // Optional controls for QA — uncomment imports and the two lines below if you want them:
+      // const controls = new OrbitControls(camera, renderer.domElement);
+      // controls.enableDamping = true;
+
+      window.addEventListener('resize', onWindowResize);
+
+      renderer.domElement.addEventListener('click', onClick);
+
+      // Keyboard shortcuts (no arrow keys)
+      window.addEventListener("keydown", (e) => {
+        switch (e.key) {
+          case "c": case "C": clearMarkers(); break;
+          case "e": case "E": exportCSV(); break;
+          case "a": case "A": exportCSV_AppStyle(); break;
+          case "l": case "L": loadFoot("left"); break;
+          case "r": case "R": loadFoot("right"); break;
+        }
+      });
+
+      // UI buttons
+      document.getElementById('clearMarkersBtn').onclick = clearMarkers;
+      document.getElementById('exportCSVDetailedBtn').onclick = exportCSV;
+      document.getElementById('exportCSVAppBtn').onclick = exportCSV_AppStyle;
+      document.getElementById('loadLeftFootBtn').onclick = () => loadFoot("left");
+      document.getElementById('loadRightFootBtn').onclick = () => loadFoot("right");
+
+      animate();
+
+      function animate() {
+        requestAnimationFrame(animate);
+        // controls?.update();
+        renderer.render(scene, camera);
+      }
+    }
+
+    async function loadFoot(side) {
+      setStatus(`Loading: ${side} foot…`);
+      modelReady = false;
+
+      // Remove previous model
+      if (footRoot) {
+        scene.remove(footRoot);
+        footRoot.traverse(obj => {
+          if (obj.isMesh) {
+            obj.geometry?.dispose();
+            if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
+            else obj.material?.dispose();
+          }
+        });
+        footRoot = null;
+      }
+      markerGroup.clear();
+      colorAttrs = [];
+
+      const loader = new GLTFLoader();
+
+      loader.load(
+        `${side}_foot_model.glb`,
+        (gltf) => {
+          footRoot = gltf.scene;
+          footRoot.traverse(obj => {
+            if (obj.isMesh) {
+              // Ensure geometry is ready for raycasting and color reads
+              obj.geometry.computeVertexNormals();
+              obj.frustumCulled = false;
+              // Collect all vertex color attributes for region detection
+              for (const key in obj.geometry.attributes) {
+                if (key.toLowerCase().startsWith('color')) {
+                  colorAttrs.push({ mesh: obj, attr: obj.geometry.attributes[key], key });
+                }
+              }
+              // Ensure vertexColors are respected visually if the material uses them (not required for detection)
+              if (obj.material && 'vertexColors' in obj.material) {
+                obj.material.vertexColors = true;
+              }
+            }
+          });
+
+          // Optional: center the model if needed (assumes geometry bounding boxes exist)
+          // const box = new THREE.Box3().setFromObject(footRoot);
+          // const center = box.getCenter(new THREE.Vector3());
+          // footRoot.position.sub(center);
+
+          scene.add(footRoot);
+          modelReady = true;
+          setStatus(`Ready: ${side} foot loaded (${colorAttrs.length} color layers detected)`);
+        },
+        (xhr) => {
+          if (xhr.total) {
+            const pct = Math.round((xhr.loaded / xhr.total) * 100);
+            setStatus(`Loading: ${side} foot… ${pct}%`);
+          }
+        },
+        (err) => {
+          console.error('GLTF load error:', err);
+          setStatus('Error: failed to load foot model. Check path and server.');
+        }
+      );
+    }
+
+    function onClick(event) {
+      if (!modelReady || !footRoot) return;
+
+      const rect = renderer.domElement.getBoundingClientRect();
+      mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+      raycaster.setFromCamera(mouse, camera);
+      const intersects = raycaster.intersectObject(footRoot, true);
+      if (intersects.length === 0) return;
+
+      const hit = intersects[0];
+      const regions = detectRegionsAtFace(hit.object, hit.faceIndex);
+      addMarker(hit.point, regions);
+    }
+
+    // Robust face-based region detection (handles indexed and non-indexed geometry)
+    function detectRegionsAtFace(mesh, faceIndex) {
+      const geom = mesh.geometry;
+      if (!geom || faceIndex == null) return [];
+
+      // Indices for the triangle's 3 vertices
+      let a, b, c;
+      if (geom.index) {
+        const ia = geom.index.getX(faceIndex * 3 + 0);
+        const ib = geom.index.getX(faceIndex * 3 + 1);
+        const ic = geom.index.getX(faceIndex * 3 + 2);
+        a = ia; b = ib; c = ic;
+      } else {
+        a = faceIndex * 3 + 0;
+        b = faceIndex * 3 + 1;
+        c = faceIndex * 3 + 2;
+      }
+
+      const regions = [];
+      // Only consider color attributes that belong to this specific mesh
+      const localColorAttrs = colorAttrs.filter(entry => entry.mesh === mesh);
+      localColorAttrs.forEach((entry, idx) => {
+        const attr = entry.attr;
+
+        const ca = new THREE.Color().fromBufferAttribute(attr, a);
+        const cb = new THREE.Color().fromBufferAttribute(attr, b);
+        const cc = new THREE.Color().fromBufferAttribute(attr, c);
+
+        // Consider layer "present" if any vertex in the face carries non-zero color
+        const present =
+          (ca.r + ca.g + ca.b) > 0.0001 ||
+          (cb.r + cb.g + cb.b) > 0.0001 ||
+          (cc.r + cc.g + cc.b) > 0.0001;
+
+        if (present) regions.push(layerNameFor(entry, idx));
+      });
+
+      return regions;
+    }
+
+    function layerNameFor(entry, idx) {
+      // You can swap this for your explicit clinical region naming/ordering
+      // e.g., return REGION_ORDER[idx] or a map by entry.key
+      return `Layer${idx + 1}`;
+    }
+
+    function addMarker(position, regions) {
+      const sphere = new THREE.Mesh(
+        new THREE.SphereGeometry(0.005, 12, 12),
+        new THREE.MeshStandardMaterial({ color: 0xff4444, metalness: 0.0, roughness: 0.6 })
+      );
+      sphere.position.copy(position);
+      sphere.userData.regions = regions;
+      markerGroup.add(sphere);
+    }
+
+    function clearMarkers() {
+      for (let i = markerGroup.children.length - 1; i >= 0; i--) {
+        const m = markerGroup.children[i];
+        if (m.geometry) m.geometry.dispose();
+        if (m.material) m.material.dispose();
+        markerGroup.remove(m);
+      }
+    }
+
+    function exportCSV() {
+      let csv = "Marker,Regions\n";
+      markerGroup.children.forEach((m, i) => {
+        csv += `${i + 1},"${m.userData.regions.join(",")}"\n`;
+      });
+      downloadCSV(csv, "detailed_export.csv");
+    }
+
+    function exportCSV_AppStyle() {
+      // Build ordered layer list based on discovered attributes (same mesh-local order as detection)
+      const layers = [];
+      const seen = new Set();
+      colorAttrs.forEach((entry, idx) => {
+        const name = layerNameFor(entry, idx);
+        if (!seen.has(name)) { layers.push(name); seen.add(name); }
+      });
+
+      // Single row binary activation across all placed markers
+      const row = new Array(layers.length).fill(0);
+      markerGroup.children.forEach((m) => {
+        m.userData.regions.forEach((r) => {
+          const i = layers.indexOf(r);
+          if (i >= 0) row[i] = 1;
+        });
+      });
+
+      let csv = layers.join(",") + "\n" + row.join(",") + "\n";
+      downloadCSV(csv, "appstyle_export.csv");
+    }
+
+    function downloadCSV(content, filename) {
+      const blob = new Blob([content], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    function onWindowResize() {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+  </script>
+</body>
+</html>
