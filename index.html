@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>3D Foot Pain Mapping Tool</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; background: #1c1c1c; color: #f1f1f1; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+  #ui { position: fixed; top: 10px; left: 10px; z-index: 10; display: flex; flex-wrap: wrap; gap: 6px; }
+  #ui button { background: #2b2b2b; color: #f1f1f1; border: 1px solid #3a3a3a; padding: 6px 10px; border-radius: 6px; cursor: pointer; }
+  #ui button:hover { background: #333; }
+  #status { position: fixed; top: 10px; right: 10px; z-index: 10; background: #2b2b2b; border: 1px solid #3a3a3a; padding: 6px 10px; border-radius: 6px; font-size: 12px; opacity: 0.9; }
+  canvas { display: block; }
+</style>
+
+<!-- Import map ensures any 'three' bare specifier resolves to the CDN -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.module.js",
+    "three/examples/jsm/": "https://cdn.jsdelivr.net/npm/three@0.152.2/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+  <div id="ui">
+    <button id="clearMarkersBtn">Clear Markers (C)</button>
+    <button id="exportCSVDetailedBtn">Export CSV Detailed (E)</button>
+    <button id="exportCSVAppBtn">Export CSV App‑Style (A)</button>
+    <button id="loadLeftFootBtn">Load Left Foot (L)</button>
+    <button id="loadRightFootBtn">Load Right Foot (R)</button>
+  </div>
+  <div id="status">Loading: idle</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+
+const urls = {
+  left:  "https://stuart-mcneill.github.io/3DFoot/Leftfoot.gltf",
+  right: "https://stuart-mcneill.github.io/3DFoot/Rightfoot.gltf"
+};
+
+let scene, camera, renderer, raycaster, mouse;
+let footRoot = null;
+let footSide = 'left';
+let markerGroup;
+let colorAttrs = []; // { mesh, attr, key, id, name }
+let modelReady = false;
+const statusEl = document.getElementById('status');
+
+init();
+loadFoot(footSide);
+
+function setStatus(text) { statusEl.textContent = text; }
+
+function init() {
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x111111);
+
+  camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.05, 100);
+  camera.position.set(0, 0.35, 1.2);
+
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  document.body.appendChild(renderer.domElement);
+
+  const hemiLight = new THREE.HemisphereLight(0xffffff, 0x222233, 0.9);
+  hemiLight.position.set(0, 1, 0);
+  scene.add(hemiLight);
+  const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
+  dirLight.position.set(1.5, 2, 1.5);
+  scene.add(dirLight);
+
+  raycaster = new THREE.Raycaster();
+  mouse = new THREE.Vector2();
+
+  markerGroup = new THREE.Group();
+  scene.add(markerGroup);
+
+  window.addEventListener('resize', onWindowResize);
+  renderer.domElement.addEventListener('click', onClick);
+
+  window.addEventListener("keydown", (e) => {
+    switch (e.key) {
+      case "c": case "C": clearMarkers(); break;
+      case "e": case "E": exportCSV(); break;
+      case "a": case "A": exportCSV_AppStyle(); break;
+      case "l": case "L": loadFoot("left"); break;
+      case "r": case "R": loadFoot("right"); break;
+    }
+  });
+
+  document.getElementById('clearMarkersBtn').onclick = clearMarkers;
+  document.getElementById('exportCSVDetailedBtn').onclick = exportCSV;
+  document.getElementById('exportCSVAppBtn').onclick = exportCSV_AppStyle;
+  document.getElementById('loadLeftFootBtn').onclick = () => loadFoot("left");
+  document.getElementById('loadRightFootBtn').onclick = () => loadFoot("right");
+
+  animate();
+  function animate() {
+    requestAnimationFrame(animate);
+    renderer.render(scene, camera);
+  }
+}
+
+function loadFoot(side) {
+  setStatus(`Loading: ${side} foot…`);
+  modelReady = false;
+
+  if (footRoot) {
+    scene.remove(footRoot);
+    footRoot.traverse(obj => {
+      if (obj.isMesh) {
+        obj.geometry?.dispose();
+        if (Array.isArray(obj.material)) obj.material.forEach(m => m?.dispose && m.dispose());
+        else obj.material?.dispose && obj.material.dispose();
+      }
+    });
+    footRoot = null;
+  }
+  clearMarkers();
+  colorAttrs = [];
+
+  const loader = new GLTFLoader();
+  loader.load(
+    urls[side],
+    (gltf) => {
+      footRoot = gltf.scene;
+      footRoot.traverse(obj => {
+        if (obj.isMesh && obj.geometry) {
+          obj.geometry.computeVertexNormals();
+          obj.frustumCulled = false;
+          const attrs = obj.geometry.attributes;
+          for (const key in attrs) {
+            if (key.toLowerCase().startsWith('color')) {
+              const id = colorAttrs.length;
+              colorAttrs.push({ mesh: obj, attr: attrs[key], key, id, name: `Layer${id+1}` });
+            }
+          }
+          if (obj.material && 'vertexColors' in obj.material) {
+            obj.material.vertexColors = true;
+          }
+        }
+      });
+      scene.add(footRoot);
+      modelReady = true;
+      setStatus(`Ready: ${side} foot loaded (${colorAttrs.length} color layers)`);
+    },
+    (xhr) => {
+      if (xhr.total) {
+        const pct = Math.round((xhr.loaded / xhr.total) * 100);
+        setStatus(`Loading: ${side} foot… ${pct}%`);
+      }
+    },
+    (err) => {
+      console.error('GLTF load error:', err);
+      setStatus('Error: failed to load foot model.');
+    }
+  );
+}
+
+function onClick(event) {
+  if (!modelReady || !footRoot) return;
+  const rect = renderer.domElement.getBoundingClientRect();
+  mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+  mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+  const intersects = raycaster.intersectObject(footRoot, true);
+  if (!intersects.length) return;
+  const hit = intersects[0];
+  const regions = detectRegionsAtFace(hit.object, hit.faceIndex);
+  addMarker(hit.point, regions);
+}
+
+function detectRegionsAtFace(mesh, faceIndex) {
+  const geom = mesh.geometry;
+  if (!geom || faceIndex == null) return [];
+
+  let a, b, c;
+  if (geom.index) {
+    a = geom.index.getX(faceIndex * 3 + 0);
+    b = geom.index.getX(faceIndex * 3 + 1);
+    c = geom.index.getX(faceIndex * 3 + 2);
+  } else {
+    a = faceIndex * 3 + 0;
+    b = faceIndex * 3 + 1;
+    c = faceIndex * 3 + 2;
+  }
+
+  const regions = [];
+  const localAttrs = colorAttrs.filter(entry => entry.mesh === mesh);
+  const black = new THREE.Color(0, 0, 0);
+
+  for (const entry of localAttrs) {
+    const attr = entry.attr;
+    const ca = new THREE.Color().fromBufferAttribute(attr, a);
+    const cb = new THREE.Color().fromBufferAttribute(attr, b);
+    const cc = new THREE.Color().fromBufferAttribute(attr, c);
+    if (!ca.equals(black) || !cb.equals(black) || !cc.equals(black)) {
+      regions.push(entry.name);
+    }
+  }
+  return regions;
+}
+
+function addMarker(position, regions) {
+  const marker = new THREE.Mesh(
+    new THREE.SphereGeometry(0.005, 8, 8),
+    new THREE.MeshBasicMaterial({ color: 0xff5555 })
+  );
+  marker.position.copy(position);
+  marker.userData = { regions };
+  markerGroup.add(marker);
+  console.log('Marker added:', regions);
+}
+
+function clearMarkers() {
+  markerGroup.clear();
+  console.log('All markers cleared.');
+}
+
+function exportCSV() {
+  if (!markerGroup.children.length) {
+    alert('No markers to export.');
+    return;
+  }
+  const rows = [['MarkerIndex', 'Regions']];
+  markerGroup.children.forEach((m, idx) => {
+    rows.push([idx+1, m.userData.regions.join('|')]);
+  });
+  downloadCSV(rows, 'markers_detailed.csv');
+}
+
+function exportCSV_AppStyle() {
+  if (!markerGroup.children.length) {
+    alert('No markers to export.');
+    return;
+  }
+  const allRegions = [...new Set(colorAttrs.map(a => a.name))];
+  const header = allRegions;
+  const binaryRow = allRegions.map(region =>
+    markerGroup.children.some(m => m.userData.regions.includes(region)) ? 1 : 0
+  );
+  const rows = [header, binaryRow];
+  downloadCSV(rows, 'markers_appstyle.csv');
+}
+
+function downloadCSV(rows, filename) {
+  const csvContent = rows.map(r => r.join(',')).join('\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function onWindowResize() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+</script>
+</body>
+</html>
